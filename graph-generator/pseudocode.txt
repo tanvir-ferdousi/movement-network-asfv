@@ -1,0 +1,81 @@
+Input: NF, PIG_DAT, SF, F_DIST, M_MIX, K_DAT, SHP_DAT
+Output: GF, GP
+
+// Assigns different production types to individual farms uniformly at random.
+F_TYPE = F_TYPE_GEN(F_DIST, NF)
+
+// Generates a directed farm graph with weighted links/edges (shipment rate)
+GF = F_GRAPH_GEN(M_MIX, F_TYPE, K_DAT, SHP_DAT)
+
+// Assigns pigs to different farms based on PIG_DAT obtained from NASS
+PIG_LIST = PIG_ALLOT(PIG_DAT, NF)
+
+// Scale the list of pigs in each arm (rounded)
+PIG_LIST = PIG_LIST/SF
+
+// Generates a pig level graph. The number of pigs in each farm are scaled by the scale factor (SF)
+GP = PIG_GRAPH_GEN(GF, PIG_LIST)
+
+
+
+1. Function farm graph gen
+GF = F_GRAPH_GEN(M_MIX, F_TYPE, K_DAT, SHP_DAT)
+
+// Allocates in and out degrees based on production types
+DEG_ALLOC = DEG_GEN(F_TYPE, K_DAT)
+
+FOR EACH SRC_NODE DO
+	// Maximum out degree allowed for this particular node
+	MAX_KOUT = DEG_ALLOC(SRC_NODE, OUTDEG)
+	
+	FOR k = 1 TO MAX_KOUT
+	
+		// Pick the destination type from the mixing matrix distribution
+		DST_TYPE ~ CHOOSE(M_MIX(F_TYPE(SRC_NODE)))
+		
+		// Find and sort the destination nodes based on probabilities.
+		DST_NODES <- NODES WHERE (FTYPE == DST_TYPE)
+		
+		// Pick the destination node which has the biggest gap to fill up
+		DST_NODE <- NODE IN NODES THAT MAXIMIZES (K_IN(NODE,MAX) - K_IN(NODE,CUR))
+		
+		// generate shipment data from lognormal distribution with mean and mediun shipment values
+		// given in SHP_DAT
+		SHP_RATE <- LOGNRND(SHP_DAT)
+
+		// Create the link with generated shipment rate as weight
+		GF <- GF + LINK SRC_NODE DST_NODE WITH WEIGHT SHP_RATE
+	
+	END FOR
+
+END FOR
+
+2. Function pig graph gen
+GP = P_GRAPH_GEN(GF, PIG_LIST, P)
+
+
+FOR EACH FARM IN GF
+	PIG_NODES = PIG_LIST(FARM)
+	
+	EDGES = ERDOS_RENYI(PIG_NODES, P)
+	
+	GP <- GP + EDGES
+	
+END FOR
+
+FOR EACH (F1, F2) PAIR IN GF WHERE F1 NOT SAME AS F2
+	P_from <- GF(F1,:)
+	P_to <- GF(:,F2)
+	
+	
+	FOR EACH pig1 IN PIG_LIST(F1)
+		FOR EACH pig2 IN PIG_LIST(F2)
+			r <- Uniform(0,1)
+			IF r <= P_from * P_to
+				GP <- GP + EDGE(pig1,Pig2)
+			END IF
+		END FOR
+	END FOR
+	
+END FOR
+
